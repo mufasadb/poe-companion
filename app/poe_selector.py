@@ -14,7 +14,7 @@ Usage:
 Config lives in ~/.config/poe-companion/ (written with defaults on first run).
 Needs: python-evdev, PyQt5, and membership of the `input` group.
 """
-import os, sys, json, argparse, subprocess, shutil
+import os, sys, json, argparse, subprocess, shutil, html
 from pathlib import Path
 
 # Run the Qt HUD under XWayland so we can self-position + stay-on-top reliably.
@@ -23,6 +23,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "poe-companion"
 REPO_DIR = Path(__file__).resolve().parent.parent
 PLANNER_HTML = REPO_DIR / "index.html"
+
+GEM_HEX = {"red": "#d05b5b", "green": "#7bb662", "blue": "#6fa8dc", "white": "#e8e0d0"}
 
 DEFAULT_CONFIG = {
     # Exact by-id path is most stable; if it's missing we fall back to name match.
@@ -192,6 +194,7 @@ def run_daemon(cfg, regexes, gems):
                 self.labels.append(lb)
             self.gemline = QtWidgets.QLabel("")
             self.gemline.setObjectName("gem")
+            self.gemline.setTextFormat(QtCore.Qt.RichText)
             lay.addWidget(self.gemline)
             lay.addStretch(1)   # keep content top-aligned within the box
 
@@ -229,7 +232,14 @@ def run_daemon(cfg, regexes, gems):
                 lb.setProperty("cur", "true" if cur else "false")
                 lb.style().unpolish(lb); lb.style().polish(lb)
             nxt = next((g for g in gems if not g.get("done")), None)
-            self.gemline.setText(f"next gem · {nxt['act']} {nxt['label']} ({nxt['source']})" if nxt else "")
+            if nxt:
+                c = GEM_HEX.get(nxt.get("color", "white"), GEM_HEX["white"])
+                self.gemline.setText(
+                    f'<span style="color:#9a9082">next gem · {html.escape(str(nxt.get("act","")))} </span>'
+                    f'<span style="color:{c};font-weight:bold">{html.escape(str(nxt.get("label","")))}</span>'
+                    f'<span style="color:#9a9082"> ({html.escape(str(nxt.get("source","")))})</span>')
+            else:
+                self.gemline.setText("")
 
         # Portrait monitor, hugged against its RIGHT edge.
         #  scroll: right half-width, bottom third (top edge sits 2/3 down)
