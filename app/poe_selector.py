@@ -21,6 +21,8 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "poe-companion"
+REPO_DIR = Path(__file__).resolve().parent.parent
+PLANNER_HTML = REPO_DIR / "index.html"
 
 DEFAULT_CONFIG = {
     # Exact by-id path is most stable; if it's missing we fall back to name match.
@@ -249,13 +251,46 @@ def run_daemon(cfg, regexes, gems):
                 print(f"[poe] ydotool failed: {e}", file=sys.stderr)
 
     app = QtWidgets.QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)   # tray keeps us alive when the HUD hides
     hud = Hud()
+
+    def reload_data():
+        nonlocal regexes, gems
+        regexes = load_json("regexes.json", DEFAULT_REGEXES)
+        gems = load_json("gems.json", DEFAULT_GEMS)
+        hud.idx = 0
+        hud.flash()
+        print(f"[poe] reloaded: {len(regexes)} regexes, {len(gems)} gems")
+
+    def tray_icon():
+        pm = QtGui.QPixmap(64, 64); pm.fill(QtCore.Qt.transparent)
+        p = QtGui.QPainter(pm); p.setRenderHint(QtGui.QPainter.Antialiasing)
+        p.setBrush(QtGui.QColor("#c8aa6e")); p.setPen(QtCore.Qt.NoPen); p.drawEllipse(4, 4, 56, 56)
+        p.setPen(QtGui.QColor("#20180a")); f = p.font(); f.setBold(True); f.setPointSize(30); p.setFont(f)
+        p.drawText(pm.rect(), QtCore.Qt.AlignCenter, "P"); p.end()
+        return QtGui.QIcon(pm)
+
+    def open_planner():
+        subprocess.Popen(["xdg-open", str(PLANNER_HTML)])
+
+    tray = QtWidgets.QSystemTrayIcon(tray_icon(), app)
+    tray.setToolTip("PoE Companion")
+    menu = QtWidgets.QMenu()
+    menu.addAction("Open planner (gems + regex)", open_planner)
+    menu.addAction("Reload regexes + gems", reload_data)
+    menu.addAction("Show HUD now", hud.flash)
+    menu.addSeparator()
+    menu.addAction("Quit", app.quit)
+    tray.setContextMenu(menu)
+    tray.activated.connect(lambda r: open_planner() if r == QtWidgets.QSystemTrayIcon.Trigger else None)
+    tray.show()
+
     reader = Reader()
     reader.action.connect(hud.on_action)
     reader.error.connect(lambda msg: (print("[poe]", msg, file=sys.stderr),
                                       QtWidgets.QMessageBox.critical(None, "PoE Companion", msg)))
     reader.start()
-    print(f"[poe] running. Listening on {path}. HUD on monitor {cfg['monitor']}.")
+    print(f"[poe] running. Tray active. Listening on {path}. HUD on monitor {cfg['monitor']}.")
     hud.flash()   # show once at startup so you know it's alive
     return app.exec_()
 

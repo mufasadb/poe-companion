@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PoE Companion
+Comment=Encoder regex selector + gem planner (system tray)
+Exec=python /home/beachy/code/poe-companion/app/poe_selector.py
+Icon=input-gaming
+Terminal=false
+Categories=Game;Utility;
+StartupNotify=false
