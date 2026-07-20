@@ -303,7 +303,7 @@ document.getElementById("mergeBtn").onclick=()=>{
   saveSnips(); renderSnips();
 };
 document.getElementById("exportRx").onclick=()=>{
-  const data=snips.filter(s=>s.rx.trim()).map(s=>({label:s.label,rx:s.rx,command:!!s.command}));
+  const data=snips.filter(s=>s.rx.trim()).map(s=>({label:s.label,rx:s.rx,command:!!s.command,cat:s.cat||""}));
   download("regexes.json", JSON.stringify(data,null,2));
 };
 document.getElementById("resetBtn").onclick=()=>{ if(confirm("Restore built-in snippets? Your edits are lost.")){snips=DEFAULTS.map(d=>({on:false,...d}));saveSnips();renderSnips();} };

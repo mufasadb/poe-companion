@@ -46,18 +46,18 @@ DEFAULT_CONFIG = {
 }
 
 DEFAULT_REGEXES = [
-    {"label": "MS boots (any)",  "rx": "ovement"},
-    {"label": "MS boots 25%+",   "rx": "2[5-9]%.*ovem|3.%.*ovem"},
-    {"label": "Life",            "rx": "imum Life"},
-    {"label": "Any resistance",  "rx": "esistance"},
-    {"label": "Life + Fire res", "rx": "imum Life.*|o Fire Res.*"},
-    {"label": "Any attribute",   "rx": "trength|exterity|ligence"},
-    {"label": "Spell damage %",  "rx": "pell Damage"},
-    {"label": "Cast speed",      "rx": "ast Speed"},
-    {"label": "+1 gem level",    "rx": "evel of all"},
-    {"label": "Phys damage %",   "rx": "ncreased Phys"},
-    {"label": "Attack speed",    "rx": "ttack Speed"},
-    {"label": "Rarity of items", "rx": "arity of Items"},
+    {"cat": "Movement",   "label": "MS boots (any)",  "rx": "ovement"},
+    {"cat": "Movement",   "label": "MS boots 25%+",   "rx": "2[5-9]%.*ovem|3.%.*ovem"},
+    {"cat": "Defence",    "label": "Life",            "rx": "imum Life"},
+    {"cat": "Defence",    "label": "Any resistance",  "rx": "esistance"},
+    {"cat": "Defence",    "label": "Life + Fire res", "rx": "imum Life.*|o Fire Res.*"},
+    {"cat": "Attributes", "label": "Any attribute",   "rx": "trength|exterity|ligence"},
+    {"cat": "Caster wpn", "label": "Spell damage %",  "rx": "pell Damage"},
+    {"cat": "Caster wpn", "label": "Cast speed",      "rx": "ast Speed"},
+    {"cat": "Caster wpn", "label": "+1 gem level",    "rx": "evel of all"},
+    {"cat": "Attack wpn", "label": "Phys damage %",   "rx": "ncreased Phys"},
+    {"cat": "Attack wpn", "label": "Attack speed",    "rx": "ttack Speed"},
+    {"cat": "Utility",    "label": "Rarity of items", "rx": "arity of Items"},
 ]
 
 DEFAULT_GEMS = [
@@ -206,8 +206,9 @@ def run_daemon(cfg, regexes, gems):
             self.setStyleSheet("""
                 #frame { background: rgba(20,17,12,0.94); border:1px solid #c8aa6e; border-radius:14px; }
                 #title { color:#c8aa6e; font:bold 15px 'sans-serif'; padding-bottom:4px; }
-                #row   { color:#9a9082; font:13px monospace; padding:3px 8px; border-radius:6px; }
-                #row[cur="true"] { color:#20180a; background:#c8aa6e; font:bold 13px monospace; }
+                #row   { color:#9a9082; font:14px 'sans-serif'; padding:3px 8px; border-radius:6px; }
+                #row[cur="true"] { color:#20180a; background:#c8aa6e; font:bold 14px 'sans-serif'; }
+                #row[head="true"] { color:#8f7a4e; font:bold 10px 'sans-serif'; padding:9px 8px 1px; }
                 #gem   { color:#7bb662; font:13px 'sans-serif'; padding-top:8px; }
             """)
 
@@ -224,16 +225,29 @@ def run_daemon(cfg, regexes, gems):
 
         # --- rendering ---
         def redraw(self):
-            n = len(regexes)
+            # display list: label only, with a category heading whenever the category changes
+            disp, last_cat = [], None
+            for j, r in enumerate(regexes):
+                cat = r.get("cat", "")
+                if cat and cat != last_cat:
+                    disp.append(("head", cat))
+                last_cat = cat or None
+                disp.append(("item", r, j))
+            cur_disp = next((k for k, d in enumerate(disp) if d[0] == "item" and d[2] == self.idx), 0)
+            m = len(disp)
             for i, lb in enumerate(self.labels):
                 off = i - self.rows
-                if n == 0:
-                    lb.setText(""); continue
-                j = (self.idx + off) % n
-                r = regexes[j]
-                cur = (off == 0)
-                prefix = "▶ " if cur else "   "
-                lb.setText(f"{prefix}{r['label']:<18} {r['rx']}")
+                head = cur = False
+                if m == 0:
+                    lb.setText("")
+                else:
+                    d = disp[(cur_disp + off) % m]
+                    if d[0] == "head":
+                        lb.setText(d[1].upper()); head = True
+                    else:
+                        cur = (d[2] == self.idx)
+                        lb.setText(("▶ " if cur else "   ") + d[1].get("label", ""))
+                lb.setProperty("head", "true" if head else "false")
                 lb.setProperty("cur", "true" if cur else "false")
                 lb.style().unpolish(lb); lb.style().polish(lb)
             nxt = next((g for g in gems if not g.get("done")), None)
