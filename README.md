@@ -1,9 +1,17 @@
 # PoE Leveling Companion
 
-A tiny, self-contained **Path of Exile (PoE 1)** leveling helper. Single HTML file —
-no server, no build, no install. Opens offline and stays out of your way while you play.
+A **Path of Exile (PoE 1)** leveling helper for a Linux / KDE-Wayland desktop with a
+wireless Sofle (ZMK) keyboard. Two parts:
 
-## What it does
+1. **`index.html`** — an offline tool to curate search-bar regexes (with copy buttons) and
+   export ZMK macros. This is also the *editor* for the app below.
+2. **`app/poe_selector.py`** — a background app: scroll the Sofle's right encoder to pick a
+   regex from a list shown on your portrait monitor, click to type it into PoE.
+
+See **[DESIGN.md](DESIGN.md)** for the full architecture and roadmap, and
+**[zmk/poe-layer.md](zmk/poe-layer.md)** for the firmware edit.
+
+## The HTML tool
 
 - **Search Regex** — a curated, editable library of vendor/stash **search-bar** regex
   (movement boots, life, resists, attributes, weapon mods…), each with one-click copy.
