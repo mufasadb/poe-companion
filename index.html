@@ -382,7 +382,8 @@ function renderQuestListInto(wrap, searchVal, isSel, onToggle){
     let html="";
     quest.offers.forEach(off=>{
       const r=forClass(off.r).map(e=>e[0]).filter(match);
-      const v=rewardsOnly?[]:forClass(off.v).map(e=>e[0]).filter(match);
+      const rset=new Set(r);   // a reward gem is also in the vendor superset — don't list it twice
+      const v=rewardsOnly?[]:forClass(off.v).map(e=>e[0]).filter(match).filter(id=>!rset.has(id));
       if(!r.length && !v.length) return;
       html+=`<div class="offer">${off.npc?`<div class="npc">${esc(off.npc)}</div>`:""}`;
       if(r.length) html+=`<div class="role">Reward · pick</div><div class="gems">${r.map(id=>gemChip(id,isSel(id))).join("")}</div>`;
