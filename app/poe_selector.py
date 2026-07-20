@@ -177,6 +177,7 @@ def run_daemon(cfg, regexes, gems):
             self.gemline = QtWidgets.QLabel("")
             self.gemline.setObjectName("gem")
             lay.addWidget(self.gemline)
+            lay.addStretch(1)   # keep content top-aligned within the box
 
             self.setStyleSheet("""
                 #frame { background: rgba(20,17,12,0.94); border:1px solid #c8aa6e; border-radius:16px; }
@@ -190,17 +191,12 @@ def run_daemon(cfg, regexes, gems):
             outer.setContentsMargins(0, 0, 0, 0)
             outer.addWidget(self.frame)
 
-            m = cfg["monitor"]
-            w = min(940, m["w"] - 40)
-            self.setFixedWidth(w + 0)
-            self.frame.setFixedWidth(w)
-            self.redraw()
-            self.adjustSize()
-            self.move(m["x"] + (m["w"] - self.width()) // 2,
-                      m["y"] + (m["h"] - self.height()) // 2)
-
+            self.mode = "idle"
+            self.idle_h = int(cfg.get("idle_height", 96))
             self.hide_timer = QtCore.QTimer(self, singleShot=True)
-            self.hide_timer.timeout.connect(self.hide)
+            self.hide_timer.timeout.connect(self.show_idle)   # after scrolling stops, fall back to idle (not hidden)
+            self.redraw()
+            self.apply_mode("idle")
 
         # --- rendering ---
         def redraw(self):
@@ -219,10 +215,35 @@ def run_daemon(cfg, regexes, gems):
             nxt = next((g for g in gems if not g.get("done")), None)
             self.gemline.setText(f"next gem · {nxt['act']} {nxt['label']} ({nxt['source']})" if nxt else "")
 
-        def flash(self):
-            self.redraw()
-            self.show(); self.raise_()
+        # Portrait monitor, hugged against its RIGHT edge.
+        #  scroll: right half-width, bottom third (top edge sits 2/3 down)
+        #  idle:   right half-width, compact strip whose top also sits 2/3 down
+        def compute_geom(self, mode):
+            m = cfg["monitor"]; w = m["w"] // 2; x = m["x"] + m["w"] - w
+            if mode == "scroll":
+                h = m["h"] // 3; y = m["y"] + m["h"] - h
+            else:
+                h = self.idle_h; y = m["y"] + (m["h"] * 2) // 3
+            return x, y, w, h
+
+        def apply_mode(self, mode):
+            self.mode = mode
+            scroll = (mode == "scroll")
+            self.title.setVisible(scroll)
+            for lb in self.labels:
+                lb.setVisible(scroll)
+            x, y, w, h = self.compute_geom(mode)
+            self.setGeometry(x, y, w, h)
+
+        def show_idle(self):
+            self.redraw(); self.apply_mode("idle"); self.show()
+
+        def show_scroll(self):
+            self.redraw(); self.apply_mode("scroll"); self.show(); self.raise_()
             self.hide_timer.start(int(cfg.get("idle_hide_ms", 4000)))
+
+        def flash(self):        # "show now" == pop the scroll view
+            self.show_scroll()
 
         # --- actions ---
         def on_action(self, a):
@@ -240,7 +261,7 @@ def run_daemon(cfg, regexes, gems):
                 nxt = next((g for g in gems if not g.get("done")), None)
                 if nxt:
                     nxt["done"] = True; save_json("gems.json", gems)
-                self.flash()
+                (self.show_scroll() if self.mode == "scroll" else self.show_idle())
 
         def type_text(self, text):
             if not shutil.which("ydotool"):
@@ -262,7 +283,7 @@ def run_daemon(cfg, regexes, gems):
         regexes = load_json("regexes.json", DEFAULT_REGEXES)
         gems = load_json("gems.json", DEFAULT_GEMS)
         hud.idx = 0
-        hud.flash()
+        hud.show_idle()
         print(f"[poe] reloaded: {len(regexes)} regexes, {len(gems)} gems")
 
     def tray_icon():
@@ -282,7 +303,7 @@ def run_daemon(cfg, regexes, gems):
     def set_enabled(on):
         hud.enabled = on
         tray.setToolTip("PoE Companion" + ("" if on else " (disabled)"))
-        (hud.flash() if on else hud.hide())
+        (hud.show_idle() if on else hud.hide())
 
     def grab_from_downloads():
         dl = Path.home() / "Downloads"
@@ -317,7 +338,7 @@ def run_daemon(cfg, regexes, gems):
                                       QtWidgets.QMessageBox.critical(None, "PoE Companion", msg)))
     reader.start()
     print(f"[poe] running. Tray active. Listening on {path}. HUD on monitor {cfg['monitor']}.")
-    hud.flash()   # show once at startup so you know it's alive
+    hud.show_idle()   # persistent next-gem strip; scrolling pops the full list
     return app.exec_()
 
 
