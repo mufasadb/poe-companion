@@ -107,6 +107,11 @@
   .modalhead{color:var(--gold);font-size:14px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
   .modalhead .x{margin-left:auto;cursor:pointer;color:var(--muted)} .modalhead .x:hover{color:var(--red)}
   .modallist{overflow-y:auto;flex:1;min-height:200px;border:1px solid var(--edge);border-radius:8px;padding:10px;background:var(--bg)}
+  /* drag & drop plan */
+  .planrow,.bpblock{cursor:grab}
+  .planrow.dragging,.bpblock.dragging{opacity:.4}
+  .planrow.dragover,.bpblock.dragover{border-color:var(--gold);box-shadow:0 -2px 0 var(--gold) inset}
+  .grip{color:var(--muted);cursor:grab;user-select:none;font-size:11px;letter-spacing:-2px}
 </style>
 </head>
 <body>
@@ -172,11 +177,12 @@
         <div id="questList"></div>
         <div class="plan card">
           <h3>Your gem plan · <span id="planCount">0</span></h3>
-          <p class="hint" style="margin:0">Click gems on the left. Ordered by when you first reach them.</p>
+          <p class="hint" style="margin:0">Click gems on the left; <b>drag rows to reorder</b>. Buy-points add to the bottom.</p>
           <div class="planlist" id="planList"></div>
           <div class="row">
             <button class="primary" id="exportGems">⤓ Export gems.json</button>
-            <button id="addBuyPoint" title="Inject a batch of gems to buy at a chosen act (build switch)">＋ Buy-point</button>
+            <button id="addBuyPoint" title="Add a build-switch buy batch to the bottom">＋ Buy-point</button>
+            <button id="sortAct" title="Reorder the plan into campaign/act order">↕ Sort by act</button>
             <button class="ghost danger" id="clearPlan">Clear</button>
           </div>
           <p class="hint">Drop into <code>~/.config/poe-companion/gems.json</code>.</p>
@@ -333,14 +339,21 @@ let plan = loadPlan();
 function loadPlan(){ try{return JSON.parse(localStorage.getItem(LS_PLAN))||{};}catch(e){return {};} }
 function savePlan(){ localStorage.setItem(LS_PLAN, JSON.stringify(plan)); }
 /* per-class plan: {picks:[gemId…], buyPoints:[{id,label,act,gems:[…]}]}  (migrates old array form) */
+/* per-class plan is one ordered list of entries the user drags:
+   {t:"pick", key} | {t:"bp", id,label,act,gems:[]}   (migrates older {picks,buyPoints}) */
 function cplan(){
   let p=plan[curClass];
-  if(Array.isArray(p)) p={picks:p,buyPoints:[]};
-  if(!p||typeof p!=="object") p={picks:[],buyPoints:[]};
-  if(!Array.isArray(p.picks)) p.picks=[];
-  if(!Array.isArray(p.buyPoints)) p.buyPoints=[];
+  if(p && !Array.isArray(p) && Array.isArray(p.entries)){ /* current form */ }
+  else if(p && !Array.isArray(p) && (Array.isArray(p.picks)||Array.isArray(p.buyPoints))){
+    const entries=[];
+    (p.picks||[]).forEach(k=>entries.push({t:"pick",key:k}));
+    (p.buyPoints||[]).forEach(bp=>entries.push({t:"bp",id:bp.id,label:bp.label,act:bp.act,gems:bp.gems||[]}));
+    p={entries};
+  } else { p={entries:[]}; }
+  if(!Array.isArray(p.entries)) p.entries=[];
   plan[curClass]=p; return p;
 }
+function entries(){ return cplan().entries; }
 
 function initGems(){
   if(!D || !D.quests){ document.getElementById("gemUnavail").style.display="block"; return; }
@@ -355,8 +368,9 @@ function initGems(){
   document.getElementById("hideSup").onchange=()=>{renderMain(); if(modalOpen)renderModalList();};
   document.getElementById("rewardsOnly").onchange=()=>{renderMain(); if(modalOpen)renderModalList();};
   document.getElementById("exportGems").onclick=exportGems;
-  document.getElementById("clearPlan").onclick=()=>{ if(confirm("Clear this class's plan?")){plan[curClass]={picks:[],buyPoints:[]};savePlan();renderMain();renderPlan();} };
+  document.getElementById("clearPlan").onclick=()=>{ if(confirm("Clear this class's plan?")){plan[curClass]={entries:[]};savePlan();renderMain();renderPlan();} };
   document.getElementById("addBuyPoint").onclick=()=>openModal();
+  document.getElementById("sortAct").onclick=sortByAct;
   document.getElementById("bpCancel").onclick=closeModal;
   document.getElementById("bpClose").onclick=closeModal;
   document.getElementById("bpSave").onclick=saveModal;
@@ -399,56 +413,63 @@ function renderQuestListInto(wrap, searchVal, keyFor, isSel, onToggle){
   wrap.querySelectorAll(".gem").forEach(el=>el.onclick=()=>onToggle(el.dataset.key));
 }
 function renderMain(){
-  const picks=cplan().picks;   // array of occurrence keys "questId:offerIdx:role:gemId"
+  const es=entries();
   renderQuestListInto(document.getElementById("questList"),
     document.getElementById("gemSearch").value,
     (id,q,oi,role)=>`${q.id}:${oi}:${role}:${id}`,
-    key=>picks.includes(key),
-    key=>{ const i=picks.indexOf(key); if(i>=0)picks.splice(i,1); else picks.push(key); savePlan(); renderMain(); renderPlan(); });
-  document.getElementById("gemHint").textContent=`${curClass} · ${picks.length} picked · ${cplan().buyPoints.length} buy-point(s)`;
+    key=>es.some(e=>e.t==="pick"&&e.key===key),
+    key=>{ const i=es.findIndex(e=>e.t==="pick"&&e.key===key);
+      if(i>=0)es.splice(i,1); else es.push({t:"pick",key});
+      savePlan(); renderMain(); renderPlan(); });
+  const np=es.filter(e=>e.t==="pick").length, nb=es.filter(e=>e.t==="bp").length;
+  document.getElementById("gemHint").textContent=`${curClass} · ${np} picked · ${nb} buy-point(s)`;
 }
 
-/* natural picks in progression order — reward & buy occurrences are distinct entries */
-function orderedPicks(){
-  const want=new Set(cplan().picks), out=[];
-  D.quests.forEach(quest=>quest.offers.forEach((off,oi)=>{
-    forClass(off.r).forEach(e=>{ const k=`${quest.id}:${oi}:r:${e[0]}`; if(want.has(k)) out.push({id:e[0],act:quest.act,source:"reward",npc:off.npc,key:k}); });
-    forClass(off.v).forEach(e=>{ const k=`${quest.id}:${oi}:v:${e[0]}`; if(want.has(k)) out.push({id:e[0],act:quest.act,source:"buy",npc:e[2]||off.npc,key:k}); });
-  }));
-  return out;
+function parsePickKey(key){
+  const p=key.split(":"); const q=D.quests.find(x=>x.id===p[0]);
+  return {id:p.slice(3).join(":"), act:q?q.act:"?", source:p[2]==="v"?"buy":"reward"};
 }
-/* merge picks + buy-points into one act-ordered timeline */
-function timeline(){
-  const items=[];
-  orderedPicks().forEach(p=>items.push({kind:"pick",actNum:parseInt(p.act)||99,data:p}));
-  cplan().buyPoints.forEach(bp=>items.push({kind:"bp",actNum:parseInt(bp.act)||99,data:bp}));
-  items.forEach((it,i)=>it._i=i);
-  items.sort((a,b)=> (a.actNum-b.actNum) || (a.kind===b.kind ? a._i-b._i : (a.kind==="pick"?-1:1)));
-  return items;
+/* one-click: reorder the plan into campaign order (picks by progression, buy-points after their act) */
+function sortByAct(){
+  const map={}; let n=0; const actMax={};
+  D.quests.forEach(q=>q.offers.forEach((off,oi)=>{
+    forClass(off.r).forEach(e=>{const k=`${q.id}:${oi}:r:${e[0]}`; map[k]=n++; actMax[q.act]=map[k];});
+    forClass(off.v).forEach(e=>{const k=`${q.id}:${oi}:v:${e[0]}`; map[k]=n++; actMax[q.act]=map[k];});
+  }));
+  const rank=it=> it.t==="pick" ? (map[it.key]??1e9) : ((actMax[it.act]??1e9)+0.5);
+  entries().sort((a,b)=>rank(a)-rank(b));
+  savePlan(); renderPlan();
 }
 function renderPlan(){
-  const list=document.getElementById("planList"); const items=timeline();
-  const np=cplan().picks.length, nb=cplan().buyPoints.length;
+  const list=document.getElementById("planList"); const es=entries();
+  const np=es.filter(e=>e.t==="pick").length, nb=es.filter(e=>e.t==="bp").length;
   document.getElementById("planCount").textContent=np+(nb?` +${nb}`:"");
-  if(!items.length){ list.innerHTML='<div class="empty">No gems picked yet.</div>'; return; }
+  if(!es.length){ list.innerHTML='<div class="empty">No gems picked yet.</div>'; return; }
   list.innerHTML="";
-  items.forEach(it=>{
-    if(it.kind==="pick"){
-      const p=it.data, g=D.gems[p.id]||{n:p.id,c:"white"};
-      const row=document.createElement("div"); row.className="planrow";
-      row.innerHTML=`<span class="dot ${g.c}"></span><span>${esc(g.n)}</span>
+  es.forEach((it,idx)=>{
+    let el;
+    if(it.t==="pick"){
+      const p=parsePickKey(it.key), g=D.gems[p.id]||{n:p.id,c:"white"};
+      el=document.createElement("div"); el.className="planrow";
+      el.innerHTML=`<span class="grip">⋮⋮</span><span class="dot ${g.c}"></span><span>${esc(g.n)}</span>
         <span class="src ${p.source}">A${p.act} ${p.source}</span><span class="x">✕</span>`;
-      row.querySelector(".x").onclick=()=>{ const a=cplan().picks,i=a.indexOf(p.key); if(i>=0)a.splice(i,1); savePlan(); renderMain(); renderPlan(); };
-      list.appendChild(row);
+      el.querySelector(".x").onclick=()=>{ es.splice(idx,1); savePlan(); renderMain(); renderPlan(); };
     } else {
-      const bp=it.data;
-      const box=document.createElement("div"); box.className="bpblock";
-      const gems=bp.gems.map(id=>{const g=D.gems[id]||{n:id,c:"white"}; return `<span class="bpgem"><span class="dot ${g.c}"></span>${esc(g.n)}</span>`;}).join("");
-      box.innerHTML=`<div class="bphead">🔁 <b>${esc(bp.label)}</b><span class="src buy">A${bp.act} buy ${bp.gems.length}</span><span class="bpedit" title="Edit">✎</span><span class="bpx" title="Remove">✕</span></div><div class="bpgems">${gems||'<span class="hint">no gems</span>'}</div>`;
-      box.querySelector(".bpx").onclick=()=>{ cplan().buyPoints=cplan().buyPoints.filter(x=>x.id!==bp.id); savePlan(); renderPlan(); renderMain(); };
-      box.querySelector(".bpedit").onclick=()=>openModal(bp);
-      list.appendChild(box);
+      const gems=it.gems.map(id=>{const g=D.gems[id]||{n:id,c:"white"}; return `<span class="bpgem"><span class="dot ${g.c}"></span>${esc(g.n)}</span>`;}).join("");
+      el=document.createElement("div"); el.className="bpblock";
+      el.innerHTML=`<div class="bphead"><span class="grip">⋮⋮</span>🔁 <b>${esc(it.label)}</b><span class="src buy">A${it.act} buy ${it.gems.length}</span><span class="bpedit" title="Edit">✎</span><span class="bpx" title="Remove">✕</span></div><div class="bpgems">${gems||'<span class="hint">no gems</span>'}</div>`;
+      el.querySelector(".bpx").onclick=()=>{ es.splice(idx,1); savePlan(); renderPlan(); renderMain(); };
+      el.querySelector(".bpedit").onclick=()=>openModal(it);
     }
+    el.draggable=true; el.dataset.idx=idx;
+    el.addEventListener("dragstart",ev=>{ ev.dataTransfer.setData("text/plain",String(idx)); el.classList.add("dragging"); });
+    el.addEventListener("dragend",()=>el.classList.remove("dragging"));
+    el.addEventListener("dragover",ev=>{ ev.preventDefault(); el.classList.add("dragover"); });
+    el.addEventListener("dragleave",()=>el.classList.remove("dragover"));
+    el.addEventListener("drop",ev=>{ ev.preventDefault(); el.classList.remove("dragover");
+      const from=parseInt(ev.dataTransfer.getData("text/plain")); if(isNaN(from)||from===idx)return;
+      const arr=entries(),[m]=arr.splice(from,1); arr.splice(from<idx?idx-1:idx,0,m); savePlan(); renderPlan(); });
+    list.appendChild(el);
   });
 }
 
@@ -476,20 +497,21 @@ function renderModalList(){
 }
 function saveModal(){
   if(!draft) return;
-  draft.label=document.getElementById("bpLabel").value||"Build switch";
-  draft.act=document.getElementById("bpAct").value;
-  const bps=cplan().buyPoints, i=bps.findIndex(x=>x.id===draft.id);
-  if(i>=0) bps[i]=draft; else bps.push(draft);
+  const label=document.getElementById("bpLabel").value||"Build switch";
+  const act=document.getElementById("bpAct").value;
+  const entry={t:"bp",id:draft.id,label,act,gems:[...draft.gems]};
+  const es=entries(), i=es.findIndex(e=>e.t==="bp"&&e.id===draft.id);
+  if(i>=0) es[i]=entry; else es.push(entry);   // new buy-point → bottom of the plan
   savePlan(); closeModal(); renderMain(); renderPlan();
 }
 
 function exportGems(){
   const data=[];
-  timeline().forEach(it=>{
-    if(it.kind==="pick"){ const p=it.data, g=D.gems[p.id]||{n:p.id,c:"white",l:1,s:false};
-      data.push({label:g.n, act:"A"+p.act, source:p.source, npc:p.npc||"", color:g.c, level:g.l, support:g.s, done:false}); }
-    else { const bp=it.data; bp.gems.forEach(id=>{ const g=D.gems[id]||{n:id,c:"white",l:1,s:false};
-      data.push({label:g.n, act:"A"+bp.act, source:"buy", switch:bp.label, color:g.c, level:g.l, support:g.s, done:false}); }); }
+  entries().forEach(it=>{
+    if(it.t==="pick"){ const p=parsePickKey(it.key), g=D.gems[p.id]||{n:p.id,c:"white",l:1,s:false};
+      data.push({label:g.n, act:"A"+p.act, source:p.source, color:g.c, level:g.l, support:g.s, done:false}); }
+    else { it.gems.forEach(id=>{ const g=D.gems[id]||{n:id,c:"white",l:1,s:false};
+      data.push({label:g.n, act:"A"+it.act, source:"buy", switch:it.label, color:g.c, level:g.l, support:g.s, done:false}); }); }
   });
   if(!data.length){ alert("Pick some gems first."); return; }
   download("gems.json", JSON.stringify(data,null,2));
