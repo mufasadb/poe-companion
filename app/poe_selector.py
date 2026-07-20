@@ -156,6 +156,7 @@ def run_daemon(cfg, regexes, gems):
             self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
             self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)   # never steal game focus
             self.idx = 0
+            self.enabled = True
             self.socket = cfg["ydotool_socket"]
             self.rows = int(cfg.get("visible_rows", 5))
 
@@ -225,6 +226,8 @@ def run_daemon(cfg, regexes, gems):
 
         # --- actions ---
         def on_action(self, a):
+            if not self.enabled:
+                return
             if not regexes and a in ("prev", "next", "select"):
                 return
             if a == "next":
@@ -275,8 +278,31 @@ def run_daemon(cfg, regexes, gems):
 
     tray = QtWidgets.QSystemTrayIcon(tray_icon(), app)
     tray.setToolTip("PoE Companion")
+
+    def set_enabled(on):
+        hud.enabled = on
+        tray.setToolTip("PoE Companion" + ("" if on else " (disabled)"))
+        (hud.flash() if on else hud.hide())
+
+    def grab_from_downloads():
+        dl = Path.home() / "Downloads"
+        copied = []
+        for name in ("regexes.json", "gems.json", "config.json"):
+            src = dl / name
+            if src.exists():
+                shutil.copy2(src, CONFIG_DIR / name); copied.append(name)
+        if copied:
+            reload_data()
+            tray.showMessage("PoE Companion", "Grabbed from Downloads: " + ", ".join(copied), tray_icon(), 4000)
+        else:
+            tray.showMessage("PoE Companion", "No regexes.json / gems.json found in ~/Downloads", tray_icon(), 4000)
+
     menu = QtWidgets.QMenu()
-    menu.addAction("Open planner (gems + regex)", open_planner)
+    act_en = menu.addAction("Enabled"); act_en.setCheckable(True); act_en.setChecked(True)
+    act_en.toggled.connect(set_enabled)
+    menu.addSeparator()
+    menu.addAction("Open companion app", open_planner)
+    menu.addAction("Grab latest from Downloads", grab_from_downloads)
     menu.addAction("Reload regexes + gems", reload_data)
     menu.addAction("Show HUD now", hud.flash)
     menu.addSeparator()
