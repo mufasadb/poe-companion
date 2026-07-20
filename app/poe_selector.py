@@ -36,6 +36,7 @@ DEFAULT_CONFIG = {
     "visible_rows": 5,          # rows shown above & below the current one
     "idle_height": 96,          # px height of the idle next-gem strip
     "hud_top": 1140,            # px from monitor top where the HUD top edge sits (meets Discord's bottom)
+    "hud_right_margin": 12,     # px gap between the HUD and the screen's right edge
     "gem_done_underscore": True,# underscore (Shift+Minus, i.e. lower-layer T) also fires gem_done
 }
 
@@ -178,8 +179,8 @@ def run_daemon(cfg, regexes, gems):
             self.frame = QtWidgets.QFrame(self)
             self.frame.setObjectName("frame")
             lay = QtWidgets.QVBoxLayout(self.frame)
-            lay.setContentsMargins(22, 22, 22, 22)
-            lay.setSpacing(6)
+            lay.setContentsMargins(14, 12, 14, 12)
+            lay.setSpacing(4)
             self.title = QtWidgets.QLabel("⚔ PoE regex")
             self.title.setObjectName("title")
             lay.addWidget(self.title)
@@ -195,11 +196,11 @@ def run_daemon(cfg, regexes, gems):
             lay.addStretch(1)   # keep content top-aligned within the box
 
             self.setStyleSheet("""
-                #frame { background: rgba(20,17,12,0.94); border:1px solid #c8aa6e; border-radius:16px; }
-                #title { color:#c8aa6e; font:bold 22px 'sans-serif'; padding-bottom:6px; }
-                #row   { color:#9a9082; font:18px monospace; padding:6px 10px; border-radius:8px; }
-                #row[cur="true"] { color:#20180a; background:#c8aa6e; font:bold 19px monospace; }
-                #gem   { color:#7bb662; font:15px 'sans-serif'; padding-top:10px; }
+                #frame { background: rgba(20,17,12,0.94); border:1px solid #c8aa6e; border-radius:14px; }
+                #title { color:#c8aa6e; font:bold 15px 'sans-serif'; padding-bottom:4px; }
+                #row   { color:#9a9082; font:13px monospace; padding:3px 8px; border-radius:6px; }
+                #row[cur="true"] { color:#20180a; background:#c8aa6e; font:bold 13px monospace; }
+                #gem   { color:#7bb662; font:13px 'sans-serif'; padding-top:8px; }
             """)
 
             outer = QtWidgets.QVBoxLayout(self)
@@ -234,7 +235,8 @@ def run_daemon(cfg, regexes, gems):
         #  scroll: right half-width, bottom third (top edge sits 2/3 down)
         #  idle:   right half-width, compact strip whose top also sits 2/3 down
         def compute_geom(self, mode):
-            m = cfg["monitor"]; w = m["w"] // 2; x = m["x"] + m["w"] - w
+            m = cfg["monitor"]; w = m["w"] // 2
+            x = m["x"] + m["w"] - w - int(cfg.get("hud_right_margin", 12))
             top = m["y"] + int(cfg.get("hud_top", (m["h"] * 2) // 3))
             if mode == "scroll":
                 y = top; h = (m["y"] + m["h"]) - top   # from HUD top down to the screen bottom
@@ -249,7 +251,8 @@ def run_daemon(cfg, regexes, gems):
             for lb in self.labels:
                 lb.setVisible(scroll)
             x, y, w, h = self.compute_geom(mode)
-            self.setGeometry(x, y, w, h)
+            self.setFixedSize(w, h)   # force exact size so idle actually collapses back to the strip
+            self.move(x, y)
 
         def show_idle(self):
             self.redraw(); self.apply_mode("idle"); self.show()
@@ -334,6 +337,20 @@ def run_daemon(cfg, regexes, gems):
         else:
             tray.showMessage("PoE Companion", "No regexes.json / gems.json found in ~/Downloads", tray_icon(), 4000)
 
+    def refresh_hud():
+        (hud.show_scroll() if hud.mode == "scroll" else hud.show_idle())
+
+    def step_gem_back():
+        idx = next((i for i, g in enumerate(gems) if not g.get("done")), len(gems))
+        if idx > 0:
+            gems[idx - 1]["done"] = False; save_json("gems.json", gems); refresh_hud()
+
+    def reset_gems():
+        for g in gems:
+            g["done"] = False
+        save_json("gems.json", gems); refresh_hud()
+        tray.showMessage("PoE Companion", "Gem progression reset", tray_icon(), 3000)
+
     menu = QtWidgets.QMenu()
     act_en = menu.addAction("Enabled"); act_en.setCheckable(True); act_en.setChecked(True)
     act_en.toggled.connect(set_enabled)
@@ -342,6 +359,9 @@ def run_daemon(cfg, regexes, gems):
     menu.addAction("Grab latest from Downloads", grab_from_downloads)
     menu.addAction("Reload regexes + gems", reload_data)
     menu.addAction("Show HUD now", hud.flash)
+    menu.addSeparator()
+    menu.addAction("Gem: step back", step_gem_back)
+    menu.addAction("Gem: reset progression", reset_gems)
     menu.addSeparator()
     menu.addAction("Quit", app.quit)
     tray.setContextMenu(menu)
