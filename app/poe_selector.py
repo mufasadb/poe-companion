@@ -313,28 +313,28 @@ def run_daemon(cfg, regexes, gems):
                 (self.show_scroll() if self.mode == "scroll" else self.show_idle())
 
         def send_entry(self, entry):
-            # regex → Ctrl+F then type; command → Enter, type, Enter (e.g. /hideout)
+            # copy to clipboard, then paste (instant) — regex: Ctrl+F then Ctrl+V;
+            # command: Enter, Ctrl+V, Enter (e.g. /hideout)
             if not shutil.which("ydotool"):
                 print("[poe] ydotool not found", file=sys.stderr); return
             env = dict(os.environ, YDOTOOL_SOCKET=self.socket)
             gap = cfg.get("action_gap_ms", 40) / 1000.0
+            text = entry.get("rx", "")
+            QtWidgets.QApplication.clipboard().setText(text)
+            QtWidgets.QApplication.processEvents()   # flush the clipboard offer before pasting
 
             def key(*codes):
                 seq = [f"{c}:1" for c in codes] + [f"{c}:0" for c in reversed(codes)]
                 subprocess.run(["ydotool", "key", *seq], env=env, check=False)
 
-            def typ(text):
-                subprocess.run(["ydotool", "type", "--key-delay", str(cfg.get("key_delay_ms", 6)), "--", text],
-                               env=env, check=False)
-
-            text = entry.get("rx", "")
+            paste = (ecodes.KEY_LEFTCTRL, ecodes.KEY_V)
             try:
                 if entry.get("command"):
-                    key(ecodes.KEY_ENTER); time.sleep(gap); typ(text); time.sleep(gap); key(ecodes.KEY_ENTER)
+                    key(ecodes.KEY_ENTER); time.sleep(gap); key(*paste); time.sleep(gap); key(ecodes.KEY_ENTER)
                 else:
                     if cfg.get("regex_ctrl_f", True):
                         key(ecodes.KEY_LEFTCTRL, ecodes.KEY_F); time.sleep(gap)
-                    typ(text)
+                    key(*paste)
             except Exception as e:
                 print(f"[poe] ydotool failed: {e}", file=sys.stderr)
 
