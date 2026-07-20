@@ -27,7 +27,7 @@ DEFAULT_CONFIG = {
     "device": "/dev/input/by-id/usb-ZMK_Project_Sofle_4CF2344BAFA2C7BE-event-kbd",
     "device_name_contains": "Sofle",
     "monitor": {"x": 0, "y": 0, "w": 1080, "h": 1920},   # HDMI-A-1 portrait
-    "keys": {"prev": "KEY_F13", "next": "KEY_F14", "select": "KEY_F15", "gem_done": "KEY_F16"},
+    "keys": {"prev": "KEY_F18", "next": "KEY_F14", "select": "KEY_F15", "gem_done": "KEY_F16"},
     "ydotool_socket": f"/run/user/{os.getuid()}/.ydotool_socket",
     "key_delay_ms": 6,
     "idle_hide_ms": 4000,

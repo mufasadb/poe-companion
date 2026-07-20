@@ -24,12 +24,11 @@ off from the keyboard.
 
 ```
   ┌─────────────── wireless Sofle (ZMK) ───────────────┐
-  │  PoE layer (toggle on):                            │
-  │    right encoder  CW → F14 (next) · CCW → F13 (prev)│
-  │    thumb key      → F15 (select / type)            │
-  │    thumb key      → F16 (mark next gem done)        │
+  │  right encoder  CW → F14 (next) · CCW → F18 (prev) │
+  │  hold RAISE/LOWER + push right knob → F15 (select) │
+  │  hold RAISE/LOWER + push left  knob → F16 (gem done)│
   └───────────────────────┬────────────────────────────┘
-                          │ HID (USB/BT) — F13..F16 only sent on PoE layer
+                          │ HID (USB/BT) — F14/F18 encoder, F15/F16 on knob-push combos
                           ▼
   ┌──────────────── poe_selector.py (PyQt5) ───────────┐
   │  evdev thread ── reads ONLY the Sofle device       │
@@ -51,17 +50,25 @@ off from the keyboard.
 
 The app writes sensible defaults on first run if these are missing.
 
-## ZMK signal contract
+## ZMK signal contract (implemented in `wireless-keyboard`)
 
-The firmware sends nothing new during normal use (encoder stays **volume** = "home"). Only on the
-**PoE layer** does the right encoder emit `F13`/`F14` and the select/gem keys emit `F15`/`F16`.
-Those F-keys are otherwise unused system-wide, so there's zero collision. See `zmk/poe-layer.md`.
+| Action | Keycode | Gesture (Linux layers) |
+|---|---|---|
+| prev | `F18` | right encoder CCW (turn left) |
+| next | `F14` | right encoder CW (turn right) |
+| select | `F15` | hold RAISE **or** LOWER + push right knob |
+| gem_done | `F16` | hold RAISE **or** LOWER + push left knob |
+
+The right encoder is dedicated to regex scrolling on the Linux layers (F14/F18 always). Select
+and gem-done need a modifier + knob-push, so they never fire during normal typing. These F-keys
+are otherwise unused system-wide → zero collision. `zmk/poe-layer.md` is the earlier draft;
+the live keymap lives in the `wireless-keyboard` repo.
 
 ## Testing ladder (each step verifiable before the next)
 
 1. `python app/poe_selector.py --list-devices` → confirms the Sofle is found.
 2. `python app/poe_selector.py --watch` → turn knob, see raw key events (proves evdev read works — will show `VOLUMEUP/DOWN` *before* firmware change).
-3. Flash the PoE layer → `--watch` now shows `F13/F14/F15` on that layer.
+3. Flash the PoE layer → `--watch` now shows `F18/F14` (knob) and `F15/F16` (knob-push combos).
 4. `python app/poe_selector.py` → HUD on portrait screen; knob scrolls; select types into focused field.
 
 ## Roadmap
