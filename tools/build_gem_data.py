@@ -44,12 +44,10 @@ for qid, q in quests.items():
         out_quests.append({
             "id": qid, "act": q.get("act", ""), "name": q.get("name", qid),
             "offers": offers,
-            "_k": q_sort_key(qid, q.get("act", "")),
         })
 
-out_quests.sort(key=lambda x: x["_k"])
-for x in out_quests:
-    del x["_k"]
+# The upstream dict order IS the campaign progression order — preserve it.
+# (Do NOT sort by quest id: a1q2 "The Caged Brute" comes long after a1q5 "Mercy Mission".)
 
 out_gems = {}
 for gid in referenced:

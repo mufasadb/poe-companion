@@ -365,13 +365,15 @@ function initGems(){
 }
 function forClass(list){ return list.filter(e=>{ const cs=e[1]; return !cs.length || cs.includes(curClass); }); }
 function actList(){ return [...new Set(D.quests.map(q=>q.act))]; }
-function gemChip(id, sel){
+function gemChip(id, key, sel){
   const g=D.gems[id]; if(!g) return "";
-  return `<span class="gem${sel?" sel":""}${g.s?" sup":""}" data-id="${id}">
+  return `<span class="gem${sel?" sel":""}${g.s?" sup":""}" data-key="${key}">
     <span class="dot ${g.c}"></span>${esc(g.n)} <span class="lvl">${g.l}</span></span>`;
 }
-/* generalized quest renderer — isSel(id)->bool, onToggle(id) */
-function renderQuestListInto(wrap, searchVal, isSel, onToggle){
+/* generalized quest renderer.
+   keyFor(id,quest,offerIdx,role)->selection key, isSel(key)->bool, onToggle(key).
+   Reward and Buy are separate chips (a reward gem is also buyable — buy a 2nd copy). */
+function renderQuestListInto(wrap, searchVal, keyFor, isSel, onToggle){
   const q=(searchVal||"").toLowerCase();
   const hideSup=document.getElementById("hideSup").checked;
   const rewardsOnly=document.getElementById("rewardsOnly").checked;
@@ -380,39 +382,39 @@ function renderQuestListInto(wrap, searchVal, isSel, onToggle){
   wrap.innerHTML="";
   D.quests.forEach(quest=>{
     let html="";
-    quest.offers.forEach(off=>{
+    quest.offers.forEach((off,oi)=>{
       const r=forClass(off.r).map(e=>e[0]).filter(match);
-      const rset=new Set(r);   // a reward gem is also in the vendor superset — don't list it twice
-      const v=rewardsOnly?[]:forClass(off.v).map(e=>e[0]).filter(match).filter(id=>!rset.has(id));
+      const v=rewardsOnly?[]:forClass(off.v).map(e=>e[0]).filter(match);
       if(!r.length && !v.length) return;
+      const chip=(id,role)=>{ const k=keyFor(id,quest,oi,role); return gemChip(id,k,isSel(k)); };
       html+=`<div class="offer">${off.npc?`<div class="npc">${esc(off.npc)}</div>`:""}`;
-      if(r.length) html+=`<div class="role">Reward · pick</div><div class="gems">${r.map(id=>gemChip(id,isSel(id))).join("")}</div>`;
-      if(v.length) html+=`<div class="role">Buy</div><div class="gems">${v.map(id=>gemChip(id,isSel(id))).join("")}</div>`;
+      if(r.length) html+=`<div class="role">Reward · pick</div><div class="gems">${r.map(id=>chip(id,"r")).join("")}</div>`;
+      if(v.length) html+=`<div class="role">Buy</div><div class="gems">${v.map(id=>chip(id,"v")).join("")}</div>`;
       html+=`</div>`;
     });
     if(html){ const sec=document.createElement("div"); sec.className="qsec";
       sec.innerHTML=`<div class="qhead"><span class="act">ACT ${quest.act}</span>${esc(quest.name)}</div>${html}`;
       wrap.appendChild(sec); }
   });
-  wrap.querySelectorAll(".gem").forEach(el=>el.onclick=()=>onToggle(el.dataset.id));
+  wrap.querySelectorAll(".gem").forEach(el=>el.onclick=()=>onToggle(el.dataset.key));
 }
 function renderMain(){
-  const picks=cplan().picks;
+  const picks=cplan().picks;   // array of occurrence keys "questId:offerIdx:role:gemId"
   renderQuestListInto(document.getElementById("questList"),
     document.getElementById("gemSearch").value,
-    id=>picks.includes(id),
-    id=>{ const i=picks.indexOf(id); if(i>=0)picks.splice(i,1); else picks.push(id); savePlan(); renderMain(); renderPlan(); });
+    (id,q,oi,role)=>`${q.id}:${oi}:${role}:${id}`,
+    key=>picks.includes(key),
+    key=>{ const i=picks.indexOf(key); if(i>=0)picks.splice(i,1); else picks.push(key); savePlan(); renderMain(); renderPlan(); });
   document.getElementById("gemHint").textContent=`${curClass} · ${picks.length} picked · ${cplan().buyPoints.length} buy-point(s)`;
 }
 
-/* natural picks in progression order */
+/* natural picks in progression order — reward & buy occurrences are distinct entries */
 function orderedPicks(){
-  const want=new Set(cplan().picks), seen=new Set(), out=[];
-  D.quests.forEach(quest=>quest.offers.forEach(off=>{
-    forClass(off.r).forEach(e=>{ if(want.has(e[0])&&!seen.has(e[0])){seen.add(e[0]); out.push({id:e[0],act:quest.act,source:"reward",npc:off.npc}); }});
-    forClass(off.v).forEach(e=>{ if(want.has(e[0])&&!seen.has(e[0])){seen.add(e[0]); out.push({id:e[0],act:quest.act,source:"buy",npc:e[2]||off.npc}); }});
+  const want=new Set(cplan().picks), out=[];
+  D.quests.forEach(quest=>quest.offers.forEach((off,oi)=>{
+    forClass(off.r).forEach(e=>{ const k=`${quest.id}:${oi}:r:${e[0]}`; if(want.has(k)) out.push({id:e[0],act:quest.act,source:"reward",npc:off.npc,key:k}); });
+    forClass(off.v).forEach(e=>{ const k=`${quest.id}:${oi}:v:${e[0]}`; if(want.has(k)) out.push({id:e[0],act:quest.act,source:"buy",npc:e[2]||off.npc,key:k}); });
   }));
-  cplan().picks.forEach(id=>{ if(!seen.has(id)){seen.add(id); out.push({id,act:"?",source:"buy",npc:""});} });
   return out;
 }
 /* merge picks + buy-points into one act-ordered timeline */
@@ -436,7 +438,7 @@ function renderPlan(){
       const row=document.createElement("div"); row.className="planrow";
       row.innerHTML=`<span class="dot ${g.c}"></span><span>${esc(g.n)}</span>
         <span class="src ${p.source}">A${p.act} ${p.source}</span><span class="x">✕</span>`;
-      row.querySelector(".x").onclick=()=>{ const a=cplan().picks,i=a.indexOf(p.id); if(i>=0)a.splice(i,1); savePlan(); renderMain(); renderPlan(); };
+      row.querySelector(".x").onclick=()=>{ const a=cplan().picks,i=a.indexOf(p.key); if(i>=0)a.splice(i,1); savePlan(); renderMain(); renderPlan(); };
       list.appendChild(row);
     } else {
       const bp=it.data;
@@ -467,6 +469,7 @@ function renderModalList(){
   if(!draft) return;
   renderQuestListInto(document.getElementById("bpQuestList"),
     document.getElementById("bpSearch").value,
+    (id)=>id,
     id=>draft.gems.includes(id),
     id=>{ const i=draft.gems.indexOf(id); if(i>=0)draft.gems.splice(i,1); else draft.gems.push(id); renderModalList(); });
   document.getElementById("bpDraftCount").textContent=draft.gems.length;
