@@ -39,14 +39,16 @@
   button.danger:hover{border-color:var(--red);color:var(--red)}
   .cat{margin:22px 0 8px;color:var(--gold-dim);font-size:12px;letter-spacing:1.5px;
     text-transform:uppercase;border-bottom:1px solid var(--edge);padding-bottom:5px}
-  .snip{display:grid;grid-template-columns:auto 1fr auto auto auto;gap:10px;align-items:center;
+  .snip{display:grid;grid-template-columns:auto 1fr auto auto auto auto;gap:10px;align-items:center;
     background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:9px 12px;margin-bottom:7px}
   .snip .label{font-weight:600}
   .snip .rx{font-family:var(--mono);color:var(--blue);font-size:13px;
     background:#0d0b08;padding:5px 9px;border-radius:6px;overflow-x:auto;white-space:nowrap}
-  .snip .note{grid-column:2/6;color:var(--muted);font-size:12px;margin-top:-2px}
+  .snip .note{grid-column:2/7;color:var(--muted);font-size:12px;margin-top:-2px}
   .copybtn{min-width:74px}
   .copybtn.ok{border-color:var(--green);color:var(--green)}
+  .typebtn{min-width:46px;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .typebtn.rx{color:var(--blue)} .typebtn.cmd{color:var(--gold);border-color:var(--gold-dim)}
   .chk{width:17px;height:17px;accent-color:var(--gold)}
   .hint{color:var(--muted);font-size:12.5px}
   .card{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:16px 18px;margin-bottom:16px}
@@ -238,6 +240,7 @@ const DEFAULTS=[
  {cat:"Attack wpn",label:"Phys damage %",      rx:"ncreased Phys"},
  {cat:"Attack wpn",label:"Attack speed",       rx:"ttack Speed"},
  {cat:"Utility",   label:"Rarity of items",    rx:"arity of Items"},
+ {cat:"Commands",  label:"Hideout",            rx:"/hideout", command:true, note:"chat command (Enter-wrapped)."},
 ];
 let snips = loadSnips();
 function loadSnips(){ try{const v=JSON.parse(localStorage.getItem(LS_SNIPS)); if(Array.isArray(v)&&v.length) return v;}catch(e){} return DEFAULTS.map(d=>({on:false,...d})); }
@@ -271,12 +274,14 @@ function renderSnips(){
       row.innerHTML=`<input type="checkbox" class="chk" ${s.on?"checked":""} title="Include on keyboard">
         <div><div class="label">${esc(s.label)}</div><div class="rx">${esc(s.rx)}</div>
           ${s.note?`<div class="note">${esc(s.note)}</div>`:""}</div>
-        <button class="copybtn" title="Copy regex">Copy</button>
+        <button class="typebtn ${s.command?'cmd':'rx'}" title="Toggle: rx = typed after Ctrl+F · cmd = chat command wrapped in Enter">${s.command?'cmd':'rx'}</button>
+        <button class="copybtn" title="Copy">Copy</button>
         <button class="ghost" title="Edit">✎</button><button class="ghost danger" title="Delete">✕</button>`;
       row.querySelector(".chk").onchange=e=>{snips[i].on=e.target.checked;saveSnips();};
+      row.querySelector(".typebtn").onclick=()=>{snips[i].command=!snips[i].command;saveSnips();renderSnips();};
       row.querySelector(".copybtn").onclick=e=>copy(s.rx,e.target);
-      row.querySelectorAll("button")[1].onclick=()=>editSnip(i);
-      row.querySelectorAll("button")[2].onclick=()=>{if(confirm("Delete?")){snips.splice(i,1);saveSnips();renderSnips();}};
+      row.querySelector(".ghost:not(.danger)").onclick=()=>editSnip(i);
+      row.querySelector(".ghost.danger").onclick=()=>{if(confirm("Delete?")){snips.splice(i,1);saveSnips();renderSnips();}};
       listEl.appendChild(row);
     });
   });
@@ -298,7 +303,7 @@ document.getElementById("mergeBtn").onclick=()=>{
   saveSnips(); renderSnips();
 };
 document.getElementById("exportRx").onclick=()=>{
-  const data=snips.filter(s=>s.rx.trim()).map(s=>({label:s.label,rx:s.rx}));
+  const data=snips.filter(s=>s.rx.trim()).map(s=>({label:s.label,rx:s.rx,command:!!s.command}));
   download("regexes.json", JSON.stringify(data,null,2));
 };
 document.getElementById("resetBtn").onclick=()=>{ if(confirm("Restore built-in snippets? Your edits are lost.")){snips=DEFAULTS.map(d=>({on:false,...d}));saveSnips();renderSnips();} };

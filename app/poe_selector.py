@@ -14,7 +14,7 @@ Usage:
 Config lives in ~/.config/poe-companion/ (written with defaults on first run).
 Needs: python-evdev, PyQt5, and membership of the `input` group.
 """
-import os, sys, json, argparse, subprocess, shutil, html
+import os, sys, json, argparse, subprocess, shutil, html, time
 from pathlib import Path
 
 # Run the Qt HUD under XWayland so we can self-position + stay-on-top reliably.
@@ -36,10 +36,13 @@ DEFAULT_CONFIG = {
     "key_delay_ms": 6,
     "idle_hide_ms": 4000,
     "visible_rows": 5,          # rows shown above & below the current one
-    "idle_height": 96,          # px height of the idle next-gem strip
+    "idle_height": 118,         # px height of the idle next-gem strip
+    "idle_gem_size": 38,        # px font size of the gem name in the idle strip (~3x)
     "hud_top": 1140,            # px from monitor top where the HUD top edge sits (meets Discord's bottom)
     "hud_right_margin": 12,     # px gap between the HUD and the screen's right edge
     "gem_done_underscore": True,# underscore (Shift+Minus, i.e. lower-layer T) also fires gem_done
+    "regex_ctrl_f": True,       # regex entries: press Ctrl+F before typing
+    "action_gap_ms": 40,        # pause between a key-combo and typing (ms)
 }
 
 DEFAULT_REGEXES = [
@@ -195,8 +198,10 @@ def run_daemon(cfg, regexes, gems):
             self.gemline = QtWidgets.QLabel("")
             self.gemline.setObjectName("gem")
             self.gemline.setTextFormat(QtCore.Qt.RichText)
-            lay.addWidget(self.gemline)
-            lay.addStretch(1)   # keep content top-aligned within the box
+            self.gemline.setAlignment(QtCore.Qt.AlignCenter)
+            lay.addStretch(1)
+            lay.addWidget(self.gemline, 0, QtCore.Qt.AlignHCenter)   # centered; stretches keep it vertically centered too
+            lay.addStretch(1)
 
             self.setStyleSheet("""
                 #frame { background: rgba(20,17,12,0.94); border:1px solid #c8aa6e; border-radius:14px; }
@@ -234,9 +239,10 @@ def run_daemon(cfg, regexes, gems):
             nxt = next((g for g in gems if not g.get("done")), None)
             if nxt:
                 c = GEM_HEX.get(nxt.get("color", "white"), GEM_HEX["white"])
+                big = int(cfg.get("idle_gem_size", 38)) if self.mode == "idle" else 13
                 self.gemline.setText(
                     f'<span style="color:#9a9082">next gem · {html.escape(str(nxt.get("act","")))} </span>'
-                    f'<span style="color:{c};font-weight:bold">{html.escape(str(nxt.get("label","")))}</span>'
+                    f'<span style="color:{c};font-weight:bold;font-size:{big}px">{html.escape(str(nxt.get("label","")))}</span>'
                     f'<span style="color:#9a9082"> ({html.escape(str(nxt.get("source","")))})</span>')
             else:
                 self.gemline.setText("")
@@ -265,10 +271,10 @@ def run_daemon(cfg, regexes, gems):
             self.move(x, y)
 
         def show_idle(self):
-            self.redraw(); self.apply_mode("idle"); self.show()
+            self.mode = "idle"; self.redraw(); self.apply_mode("idle"); self.show()
 
         def show_scroll(self):
-            self.redraw(); self.apply_mode("scroll"); self.show(); self.raise_()
+            self.mode = "scroll"; self.redraw(); self.apply_mode("scroll"); self.show(); self.raise_()
             self.hide_timer.start(int(cfg.get("idle_hide_ms", 4000)))
 
         def flash(self):        # "show now" == pop the scroll view
@@ -285,21 +291,36 @@ def run_daemon(cfg, regexes, gems):
             elif a == "prev":
                 self.idx = (self.idx - 1) % len(regexes); self.flash()
             elif a == "select":
-                self.type_text(regexes[self.idx]["rx"]); self.flash()
+                self.send_entry(regexes[self.idx]); self.flash()
             elif a == "gem_done":
                 nxt = next((g for g in gems if not g.get("done")), None)
                 if nxt:
                     nxt["done"] = True; save_json("gems.json", gems)
                 (self.show_scroll() if self.mode == "scroll" else self.show_idle())
 
-        def type_text(self, text):
+        def send_entry(self, entry):
+            # regex → Ctrl+F then type; command → Enter, type, Enter (e.g. /hideout)
             if not shutil.which("ydotool"):
                 print("[poe] ydotool not found", file=sys.stderr); return
             env = dict(os.environ, YDOTOOL_SOCKET=self.socket)
+            gap = cfg.get("action_gap_ms", 40) / 1000.0
+
+            def key(*codes):
+                seq = [f"{c}:1" for c in codes] + [f"{c}:0" for c in reversed(codes)]
+                subprocess.run(["ydotool", "key", *seq], env=env, check=False)
+
+            def typ(text):
+                subprocess.run(["ydotool", "type", "--key-delay", str(cfg.get("key_delay_ms", 6)), "--", text],
+                               env=env, check=False)
+
+            text = entry.get("rx", "")
             try:
-                subprocess.run(
-                    ["ydotool", "type", "--key-delay", str(cfg.get("key_delay_ms", 6)), "--", text],
-                    env=env, check=False)
+                if entry.get("command"):
+                    key(ecodes.KEY_ENTER); time.sleep(gap); typ(text); time.sleep(gap); key(ecodes.KEY_ENTER)
+                else:
+                    if cfg.get("regex_ctrl_f", True):
+                        key(ecodes.KEY_LEFTCTRL, ecodes.KEY_F); time.sleep(gap)
+                    typ(text)
             except Exception as e:
                 print(f"[poe] ydotool failed: {e}", file=sys.stderr)
 
