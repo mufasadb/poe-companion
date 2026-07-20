@@ -75,8 +75,16 @@ the live keymap lives in the `wireless-keyboard` repo.
 
 - [x] Static HTML regex library + ZMK macro export
 - [x] Standalone git repo
-- [ ] **Phase 1 — spike:** evdev read + PyQt5 HUD + ydotool type (this commit; needs `python-evdev` + `input` group)
-- [ ] Phase 2 — ZMK PoE layer flashed & verified end-to-end
-- [ ] Phase 3 — gem checklist UX (mark-done key, progressive order)
-- [ ] Phase 4 — polish: systemd --user unit, tray icon, HTML→`regexes.json` one-click sync
-- [ ] Stretch — true on-game overlay (gtk-layer-shell), verify tiers in-game
+- [x] **Phase 1 — spike:** evdev read + PyQt5 HUD + ydotool type — verified end-to-end (F18/F14/F15/F16)
+- [x] Phase 2 — ZMK PoE layer (built in the `wireless-keyboard` repo)
+- [x] Regex combo authoring + `regexes.json` export (Regex tab)
+- [x] **Gem Planner GUI** — class → quest/vendor gems (Exile Leveling data) → ordered plan → `gems.json` export
+- [ ] Phase 3b — in-app data sync (browser download → config dir is manual for now)
+- [ ] Phase 4 — polish: systemd --user unit, tray icon, HUD gem-progress panel
+- [ ] Stretch — true on-game overlay (gtk-layer-shell), verify regex tiers in-game
+
+## Gem data
+
+`gemdata.js` is generated from Exile Leveling (MIT, © HeartofPhos) by `tools/build_gem_data.py`
+from `vendor/exile-leveling/*.json`. 458 gems, 14 quests with offers, 7 classes. Regenerate:
+`python tools/build_gem_data.py`.
