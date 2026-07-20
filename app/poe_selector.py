@@ -34,6 +34,9 @@ DEFAULT_CONFIG = {
     "key_delay_ms": 6,
     "idle_hide_ms": 4000,
     "visible_rows": 5,          # rows shown above & below the current one
+    "idle_height": 96,          # px height of the idle next-gem strip
+    "hud_top": 1140,            # px from monitor top where the HUD top edge sits (meets Discord's bottom)
+    "gem_done_underscore": True,# underscore (Shift+Minus, i.e. lower-layer T) also fires gem_done
 }
 
 DEFAULT_REGEXES = [
@@ -132,6 +135,7 @@ def run_daemon(cfg, regexes, gems):
 
     keymap = cfg["keys"]
     action_for = {getattr(ecodes, v): k for k, v in keymap.items()}  # keycode int -> action
+    underscore_gem_done = bool(cfg.get("gem_done_underscore", True))
 
     class Reader(QtCore.QThread):
         action = QtCore.pyqtSignal(str)
@@ -143,11 +147,22 @@ def run_daemon(cfg, regexes, gems):
             except PermissionError:
                 self.error.emit("Permission denied reading the keyboard.\nAdd yourself to the 'input' group and re-login.")
                 return
+            shift = False
+            SHIFTS = (ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT)
             for ev in dev.read_loop():
-                if ev.type == ecodes.EV_KEY and ev.value == 1:   # key-down only
-                    a = action_for.get(ev.code)
-                    if a:
-                        self.action.emit(a)
+                if ev.type != ecodes.EV_KEY:
+                    continue
+                if ev.code in SHIFTS:
+                    shift = ev.value != 0          # track held shift (down/hold = True)
+                    continue
+                if ev.value != 1:                  # key-down only
+                    continue
+                # underscore (Shift+Minus = lower-layer T) mirrors the gem-done knob press
+                if underscore_gem_done and ev.code == ecodes.KEY_MINUS and shift:
+                    self.action.emit("gem_done"); continue
+                a = action_for.get(ev.code)
+                if a:
+                    self.action.emit(a)
 
     class Hud(QtWidgets.QWidget):
         def __init__(self):
@@ -220,10 +235,11 @@ def run_daemon(cfg, regexes, gems):
         #  idle:   right half-width, compact strip whose top also sits 2/3 down
         def compute_geom(self, mode):
             m = cfg["monitor"]; w = m["w"] // 2; x = m["x"] + m["w"] - w
+            top = m["y"] + int(cfg.get("hud_top", (m["h"] * 2) // 3))
             if mode == "scroll":
-                h = m["h"] // 3; y = m["y"] + m["h"] - h
+                y = top; h = (m["y"] + m["h"]) - top   # from HUD top down to the screen bottom
             else:
-                h = self.idle_h; y = m["y"] + (m["h"] * 2) // 3
+                y = top; h = self.idle_h
             return x, y, w, h
 
         def apply_mode(self, mode):
